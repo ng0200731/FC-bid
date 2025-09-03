@@ -13,9 +13,9 @@ VERSION TRACKING:
 """
 
 # Version tracking system
-VERSION = "3.5.0"
-VERSION_DATE = "2025-08-15 00:00"
-LAST_EDIT = "Fix folder opening: Open Folder button + auto-open after downloads"
+VERSION = "3.5.9"
+VERSION_DATE = "2025-01-03 15:30"
+LAST_EDIT = "Fixed table detection to handle td.tableHeaderText headers and tblItems table ID"
 
 from flask import Flask, render_template_string, request, jsonify, send_file, Response
 import os
@@ -1403,29 +1403,42 @@ def get_po_data(po_number):
             rows = table.find_elements(By.TAG_NAME, "tr")
             print(f"Table {table_index}: {len(rows)} rows")
 
-            # Multiple strategies to identify the correct table
-            header_found = False
-            table_score = 0
+            # Check if this is the items table by ID
+            table_id = table.get_attribute('id')
+            if table_id == 'tblItems':
+                print(f"Table {table_index} identified as items table by ID: {table_id}")
+                header_found = True
+                table_score = 10  # High confidence
+            else:
+                # Multiple strategies to identify the correct table
+                header_found = False
+                table_score = 0
 
-            # Strategy 1: Look for header row with expected columns
-            for row_index, row in enumerate(rows):
-                header_cells = row.find_elements(By.TAG_NAME, "th")
-                if len(header_cells) >= 5:  # Expect multiple columns
-                    header_text = " ".join([cell.text.strip() for cell in header_cells]).lower()
-                    print(f"Table {table_index}, Row {row_index} headers: {header_text}")
+                # Strategy 1: Look for header row with expected columns (check both th and td with tableHeaderText class)
+                for row_index, row in enumerate(rows):
+                    # Check for traditional th headers
+                    header_cells = row.find_elements(By.TAG_NAME, "th")
 
-                    # Score based on expected headers
-                    if "item" in header_text: table_score += 3
-                    if "description" in header_text: table_score += 3
-                    if "color" in header_text: table_score += 2
-                    if "qty" in header_text or "quantity" in header_text: table_score += 2
-                    if "ship" in header_text: table_score += 1
-                    if "need" in header_text or "date" in header_text: table_score += 1
+                    # Also check for td headers with tableHeaderText class (like in PO 1287364)
+                    if not header_cells:
+                        header_cells = row.find_elements(By.CSS_SELECTOR, "td.tableHeaderText")
 
-                    if table_score >= 6:  # Good confidence
-                        header_found = True
-                        print(f"Table {table_index} selected with score {table_score}")
-                        break
+                    if len(header_cells) >= 5:  # Expect multiple columns
+                        header_text = " ".join([cell.text.strip() for cell in header_cells]).lower()
+                        print(f"Table {table_index}, Row {row_index} headers: {header_text}")
+
+                        # Score based on expected headers
+                        if "item" in header_text: table_score += 3
+                        if "description" in header_text: table_score += 3
+                        if "color" in header_text: table_score += 2
+                        if "qty" in header_text or "quantity" in header_text: table_score += 2
+                        if "ship" in header_text: table_score += 1
+                        if "need" in header_text or "date" in header_text: table_score += 1
+
+                        if table_score >= 6:  # Good confidence
+                            header_found = True
+                            print(f"Table {table_index} selected with score {table_score}")
+                            break
 
             # Strategy 2: Look for item links in data rows
             if not header_found:
@@ -1447,8 +1460,16 @@ def get_po_data(po_number):
 
                 if len(cells) >= 4:  # Minimum columns needed
                     try:
-                        # Get all cell text for analysis
-                        cell_texts = [cell.text.strip() for cell in cells]
+                        # Enhanced cell text extraction - handle links and nested elements
+                        cell_texts = []
+                        for cell in cells:
+                            # Try to get text from links first, then fallback to cell text
+                            try:
+                                link = cell.find_element(By.TAG_NAME, "a")
+                                cell_text = link.text.strip()
+                            except:
+                                cell_text = cell.text.strip()
+                            cell_texts.append(cell_text)
                         print(f"Row data: {cell_texts[:6]}")  # Show first 6 columns
 
                         # Correct column mapping based on real web table structure
@@ -1470,10 +1491,15 @@ def get_po_data(po_number):
                             item_number != "Total:" and
                             item_number != "Description" and
                             not item_number.startswith("#") and  # Skip row numbers
+                            not 'item #' in item_number.lower() and  # Skip header rows
+                            not 'need by' in ' '.join(cell_texts).lower() and  # Skip header rows
                             description and
                             len(description) > 5 and  # Descriptions are usually longer
                             description != "Item #" and
                             description != "Description" and
+                            description != "Need By" and
+                            description != "Color" and
+                            description != "Ship To" and
                             # Check if it looks like a real item number (contains letters and numbers)
                             any(c.isalpha() for c in item_number) and
                             any(c.isdigit() for c in item_number)
@@ -2201,6 +2227,7 @@ def download_guaranteed_complete(po_number, items, download_folder):
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from webdriver_manager.chrome import ChromeDriverManager
@@ -2224,7 +2251,13 @@ def download_guaranteed_complete(po_number, items, download_folder):
     chrome_options.add_experimental_option('useAutomationExtension', False)
 
     try:
-        driver = webdriver.Chrome(options=chrome_options)
+        # Use ChromeDriverManager like in get_po_data function
+        try:
+            driver_path = ChromeDriverManager().install()
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        except:
+            driver = webdriver.Chrome(options=chrome_options)
         download_status['log'].append("✅ Browser setup complete")
 
         # CRITICAL: Login first (same as working unified_downloader.py)
@@ -2252,8 +2285,8 @@ def download_guaranteed_complete(po_number, items, download_folder):
         driver.get(po_url)
         download_status['log'].append(f"📄 Loaded PO page: {po_number} (after login)")
 
-        # Wait for page to load
-        time.sleep(3)
+        # Wait for page to load (reduced for faster processing)
+        time.sleep(1)
 
         # Find item links with openItemDetail onclick (same as unified_downloader.py)
         download_status['log'].append("🔍 Finding item links with openItemDetail...")
@@ -2289,10 +2322,10 @@ def download_guaranteed_complete(po_number, items, download_folder):
                 original_windows = len(driver.window_handles)
                 driver.execute_script("arguments[0].click();", link)
 
-                # Wait for popup with better detection
+                # Wait for popup with faster detection
                 popup_opened = False
-                for wait_attempt in range(50):  # Increased wait time
-                    time.sleep(0.2)  # Longer sleep intervals
+                for wait_attempt in range(15):  # Reduced wait time for faster processing
+                    time.sleep(0.2)  # Quick sleep intervals
                     if len(driver.window_handles) > original_windows:
                         popup_opened = True
                         break
@@ -2334,7 +2367,7 @@ def download_guaranteed_complete(po_number, items, download_folder):
                     # Close popup
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
-                    time.sleep(0.5)
+                    time.sleep(0.2)  # Reduced delay for faster processing
                 else:
                     download_status['log'].append(f"❌ Popup did not open for {item_name}")
 
@@ -2377,7 +2410,7 @@ def download_guaranteed_complete(po_number, items, download_folder):
             except Exception as e:
                 download_status['log'].append(f"❌ Error downloading {item_name}: {str(e)}")
 
-            time.sleep(0.5)
+            time.sleep(0.2)  # Faster processing
 
     except Exception as e:
         download_status['log'].append(f"❌ Browser setup error: {str(e)}")
@@ -2581,6 +2614,24 @@ def save_po_details_api():
 
     except Exception as e:
         return jsonify({"success": False, "message": f"Error processing PO: {str(e)}"})
+
+@app.route('/api/po/test_scraping/<po_number>', methods=['GET'])
+def test_po_scraping(po_number):
+    """Test endpoint to debug PO scraping"""
+    try:
+        print(f"🧪 Testing scraping for PO {po_number}")
+        result = get_po_data(po_number)
+
+        return jsonify({
+            "success": result.get('success', False),
+            "po_number": po_number,
+            "items_found": len(result.get('items', [])),
+            "items": result.get('items', []),
+            "error": result.get('error', None),
+            "title": result.get('title', None)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route('/api/po/get_all', methods=['GET'])
 def get_all_pos():
