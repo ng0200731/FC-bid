@@ -1,0 +1,104 @@
+﻿# Smart BrandID Downloader - Git Ignore Rules
+# DEVELOPMENT RULE: Never commit user data or sensitive files
+
+# PDF Files (Downloaded content)
+*.pdf
+
+# Download Folders (Central download folder)
+download_artwork/
+!download_artwork/README.md
+
+# Legacy Date folders (old format)
+2024_*/
+2025_*/
+2026_*/
+2027_*/
+
+# Legacy PO folders (old format)
+1280282/
+1284678/
+1288060*/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+.env
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Chrome/Browser files
+*.crdownload
+*.part
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Configuration files with sensitive data
+config.json
+credentials.json
+.env.local
+
+# Test and development files
+test_*.py
+*_test.py
+debug_*.py
+temp_*.py
+old_*.py
+backup_*.py
+experimental_*.py
+
+# Test batch files
+*_debug.bat
+*_test.bat
+*_simple.bat
+temp_*.bat
+old_*.bat
+
+# Empty download directories
+downloads/
+diagnostic_downloads_*/
